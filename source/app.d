@@ -18,6 +18,8 @@ enum TokenType
 	CommentLine,
 	CommentBlock,
 	LiteralString,
+	/* LiteralFloat, */
+	/* LiteralInteger, */
 	/* ParenthesisLeft, */
 	/* ParenthesisRight, */
 	/* BraceLeft, */
@@ -125,8 +127,10 @@ class Lexer
 		token.type = TokenType.Unknown;
 		token.line = line;
 		token.column = column;
+
 		popFront; // pop '/'
 		popFront; // pop '/'
+
 		token.value = chopLine; // chop until '\n'
 		token.type = TokenType.CommentLine;
 		return token;
@@ -139,6 +143,7 @@ class Lexer
 		token.line = line;
 		token.column = column;
 
+		// FIXME: if parsing fails these chars should be added to the unknown token
 		popFront; // pop '/'
 		popFront; // pop '*'
 
@@ -169,6 +174,27 @@ class Lexer
 		token.type = TokenType.Unknown;
 		token.line = line;
 		token.column = column;
+
+		// FIXME: if parsing fails this char should be added to the unknown token
+		popFront; // pop '\''
+
+		for (;;)
+		{
+			token.value ~= chopUntil!"a=='\\\''";
+			if (empty)
+			{
+				break;
+			}
+			if (this[-1] != '\\')
+			{
+				token.type = TokenType.LiteralString;
+				popFront; // pop '\''
+				break;
+			}
+			token.value ~= front; // chop string char
+			popFront;
+		}
+
 		return token;
 	}
 
