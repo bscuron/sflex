@@ -15,16 +15,15 @@ import std.path;
 enum TokenType
 {
 	Unknown,
-	CommentSingleLine,
-	CommentMultiLine,
-	Identifier,
+	CommentLine,
+	CommentBlock,
+	LiteralString,
 	/* ParenthesisLeft, */
 	/* ParenthesisRight, */
 	/* BraceLeft, */
 	/* BraceRight, */
 	/* BracketRight, */
 	/* BracketLeft, */
-	/* CommentMultiLine, */
 }
 
 struct Token
@@ -36,6 +35,7 @@ struct Token
 
 	string toString()
 	{
+		auto value = this.value.lineSplitter.join("\\n");
 		return i"$(line):$(column): $(type)\t$(value)".text;
 	}
 }
@@ -59,6 +59,11 @@ class Lexer
 	auto front() => src[offset];
 	auto popFront()
 	{
+		if (!empty && front == '\n')
+		{
+			line++;
+			bol = offset + 1;
+		}
 		offset++;
 	}
 	auto empty() => offset > src.length - 1;
@@ -91,11 +96,6 @@ class Lexer
 
 		while (!empty && pred(front)) 
 		{
-			if (front == '\n')
-			{
-				line++;
-				bol = offset + 1;
-			}
 			value ~= front;
 			popFront;
 		}
@@ -103,20 +103,9 @@ class Lexer
 		return value[];
 	}
 
-	string chopUntil(alias pred)()
-	{
-		return chopWhile!(not!pred);
-	}
+	string chopUntil(alias pred)() => chopWhile!(not!pred);
 
-	string chopLine()
-	{
-		scope(exit)
-		{
-			line++;
-			bol = offset + 1;
-		}
-		return chopUntil!"a=='\\n'";
-	}
+	string chopLine() => chopUntil!"a=='\\n'";
 
 	Token chopToken(TokenType T)()
 	{
@@ -130,45 +119,56 @@ class Lexer
 		}
 	}
 
-	Token chopTokenCommentSingleLine()
+	Token chopTokenCommentLine()
 	{
 		Token token;
 		token.type = TokenType.Unknown;
 		token.line = line;
 		token.column = column;
-		token.value = chopLine;
-		token.type = TokenType.CommentSingleLine;
+		popFront; // pop '/'
+		popFront; // pop '/'
+		token.value = chopLine; // chop until '\n'
+		token.type = TokenType.CommentLine;
 		return token;
 	}
 
-	Token chopTokenCommentMultiLine()
+	Token chopTokenCommentBlock()
 	{
 		Token token;
 		token.type = TokenType.Unknown;
 		token.line = line;
 		token.column = column;
 
-		token.value ~= front;
-		popFront;
+		popFront; // pop '/'
+		popFront; // pop '*'
+
 		for (;;)
 		{
-			token.value ~= chopUntil!"a=='/'";
+			token.value ~= chopUntil!"a=='/'"; // chop until '/'
 			if (empty)
 			{
 				break;
 			}
-			token.value ~= front;
-
 			if (this[-1] == '*')
 			{
-				token.type = TokenType.CommentMultiLine;
-				popFront;
+				token.value.popBack; // pop '*' from token value
+				token.type = TokenType.CommentBlock;
+				popFront; // pop '/'
 				break;
 			}
-			popFront;
+			token.value ~= front; // chop comment char
+			popFront; // pop comment char
 		}
-		token.value = token.value.lineSplitter.join("\\n");
 
+		return token;
+	}
+
+	Token chopTokenLiteralString()
+	{
+		Token token;
+		token.type = TokenType.Unknown;
+		token.line = line;
+		token.column = column;
 		return token;
 	}
 
@@ -184,14 +184,21 @@ class Lexer
 			// single-line comment
 			if (l[0] == '/' && l[1] == '/')
 			{
-				auto token = l.chopToken!(TokenType.CommentSingleLine);
+				auto token = l.chopToken!(TokenType.CommentLine);
 				l.tokens ~= token;
 			}
 
 			// multi-line comment
 			else if (l[0] == '/' && l[1] == '*')
 			{
-				auto token = l.chopToken!(TokenType.CommentMultiLine);
+				auto token = l.chopToken!(TokenType.CommentBlock);
+				l.tokens ~= token;
+			}
+
+			// literal string
+			else if (l[0] == '\'')
+			{
+				auto token = l.chopToken!(TokenType.LiteralString);
 				l.tokens ~= token;
 			}
 		}
