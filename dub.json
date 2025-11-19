@@ -1,0 +1,9 @@
+{
+	"authors": [
+		"Ben Scuron"
+	],
+	"copyright": "Copyright © 2025, Ben Scuron",
+	"description": "Salesforce Apex Language Lexer",
+	"license": "proprietary",
+	"name": "sflex"
+}

@@ -1,0 +1,17 @@
+.dub
+docs.json
+__dummy.html
+docs/
+/sflex
+sflex.so
+sflex.dylib
+sflex.dll
+sflex.a
+sflex.lib
+sflex-test-*
+*.exe
+*.pdb
+*.o
+*.obj
+*.lst
+tags
