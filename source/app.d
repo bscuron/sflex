@@ -9,9 +9,12 @@ import std.algorithm;
 import std.functional;
 import std.traits;
 import std.string;
+import std.math;
+import std.path;
 
 enum TokenType
 {
+	Unknown,
 	CommentSingleLine,
 	CommentMultiLine,
 	Identifier,
@@ -33,7 +36,7 @@ struct Token
 
 	string toString()
 	{
-		return i"$(type)(value=$(value), line=$(line), column=$(column))".text;
+		return i"$(line):$(column): $(type)\t$(value)".text;
 	}
 }
 
@@ -58,9 +61,29 @@ class Lexer
 	{
 		offset++;
 	}
-	auto empty() => offset >= src.length - 1; // FIXME: this is probably wrong
-	auto length() => src.length - 1 - offset;
-	auto opIndex(ulong i) => src[offset + i];
+	auto empty() => offset > src.length - 1;
+
+	// NOTE: since index op is used for offset relative to the lexer's byte
+	// offset, it is probably ok that i is signed. This allows negative
+	// offsets.
+	Nullable!dchar opIndex(long i)
+	{
+		// underflow
+		if (i < 0 && abs(i) > offset)
+		{
+			return Nullable!dchar.init;
+		}
+
+		i += offset;
+
+		// overflow
+		if (i > src.length - 1)
+		{
+			return Nullable!dchar.init;
+		}
+
+		return Nullable!dchar(src[i]);
+	}
 
 	string chopWhile(alias pred)()
 	{
@@ -110,27 +133,36 @@ class Lexer
 	Token chopTokenCommentSingleLine()
 	{
 		Token token;
-		token.type = TokenType.CommentSingleLine;
+		token.type = TokenType.Unknown;
 		token.line = line;
 		token.column = column;
 		token.value = chopLine;
+		token.type = TokenType.CommentSingleLine;
 		return token;
 	}
 
 	Token chopTokenCommentMultiLine()
 	{
 		Token token;
-		token.type = TokenType.CommentMultiLine;
+		token.type = TokenType.Unknown;
 		token.line = line;
 		token.column = column;
-		token.value ~= front;
 
-		while (!empty)
+		token.value ~= front;
+		popFront;
+		for (;;)
 		{
 			token.value ~= chopUntil!"a=='/'";
+			if (empty)
+			{
+				break;
+			}
+			token.value ~= front;
+
 			if (this[-1] == '*')
 			{
-				token.value ~= front;
+				token.type = TokenType.CommentMultiLine;
+				popFront;
 				break;
 			}
 			popFront;
@@ -170,10 +202,8 @@ class Lexer
 
 void main()
 {
-	auto file = "./source/Main.cls";
-	auto src = file.readText;
+	auto filePath = "./source/Main.cls";
+	auto src = filePath.readText;
 	auto tokens = Lexer.tokenize(src);
-	writeln;
-	writeln("Tokens:");
-	tokens.each!(token => writeln('\t', token));
+	tokens.each!writeln;
 }
