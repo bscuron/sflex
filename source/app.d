@@ -5,6 +5,7 @@ import std.typecons;
 import std.uni;
 import std.conv;
 import std.range;
+import std.range.primitives;
 import std.algorithm;
 import std.functional;
 import std.traits;
@@ -57,9 +58,9 @@ class Lexer
 		this.src = src;
 	}
 
-	static assert(isInputRange!(Lexer));
-	auto front() => src[offset];
-	auto popFront()
+	static assert(isInputRange!Lexer);
+	dchar front() => src[offset];
+	void popFront()
 	{
 		if (!empty && front == '\n')
 		{
@@ -68,7 +69,34 @@ class Lexer
 		}
 		offset++;
 	}
-	auto empty() => offset > src.length - 1;
+	bool empty() => src.empty || offset > src.length - 1;
+	dchar moveFront() => front;
+	int opApply(scope int delegate(dchar) dg)
+	{
+		while (!empty)
+		{
+			auto ret = dg(front);
+			if (ret)
+			{
+				return ret;
+			}
+			popFront;
+		}
+		return 0;
+	}
+	int opApply(scope int delegate(ulong, dchar) dg)
+	{
+		while (!empty)
+		{
+			auto ret = dg(offset, front);
+			if (ret)
+			{
+				return ret;
+			}
+			popFront;
+		}
+		return 0;
+	}
 
 	// NOTE: since index op is used for offset relative to the lexer's byte
 	// offset, it is probably ok that i is signed. This allows negative
@@ -91,6 +119,8 @@ class Lexer
 
 		return Nullable!dchar(src[i]);
 	}
+
+	@property Lexer save() => this;
 
 	string chopWhile(alias pred)()
 	{
@@ -127,11 +157,8 @@ class Lexer
 		token.type = TokenType.Unknown;
 		token.line = line;
 		token.column = column;
-
-		popFront; // pop '/'
-		popFront; // pop '/'
-
-		token.value = chopLine; // chop until '\n'
+		token.value = chopLine;
+		token.value.popFrontExactly(2LU);
 		token.type = TokenType.CommentLine;
 		return token;
 	}
@@ -143,26 +170,23 @@ class Lexer
 		token.line = line;
 		token.column = column;
 
-		// FIXME: if parsing fails these chars should be added to the unknown token
-		popFront; // pop '/'
-		popFront; // pop '*'
-
 		for (;;)
 		{
-			token.value ~= chopUntil!"a=='/'"; // chop until '/'
+			token.value ~= chopUntil!"a=='/'";
 			if (empty)
 			{
 				break;
 			}
 			if (this[-1] == '*')
 			{
-				token.value.popBack; // pop '*' from token value
+				token.value.popFrontExactly(2LU);
+				token.value.popBack;
 				token.type = TokenType.CommentBlock;
-				popFront; // pop '/'
+				popFront;
 				break;
 			}
-			token.value ~= front; // chop comment char
-			popFront; // pop comment char
+			token.value ~= front;
+			popFront;
 		}
 
 		return token;
@@ -175,11 +199,10 @@ class Lexer
 		token.line = line;
 		token.column = column;
 
-		// FIXME: if parsing fails this char should be added to the unknown token
-		popFront; // pop '\''
-
 		for (;;)
 		{
+			token.value ~= front;
+			popFront;
 			token.value ~= chopUntil!"a=='\\\''";
 			if (empty)
 			{
@@ -187,12 +210,11 @@ class Lexer
 			}
 			if (this[-1] != '\\')
 			{
+				token.value.popFrontExactly(1LU);
 				token.type = TokenType.LiteralString;
-				popFront; // pop '\''
+				popFront;
 				break;
 			}
-			token.value ~= front; // chop string char
-			popFront;
 		}
 
 		return token;
