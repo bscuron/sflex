@@ -20,12 +20,32 @@ enum TokenType
 	CommentBlock,
 	LiteralString,
 	LiteralFloat,
-	/* ParenthesisLeft, */
-	/* ParenthesisRight, */
-	/* BraceLeft, */
-	/* BraceRight, */
-	/* BracketRight, */
-	/* BracketLeft, */
+	LiteralInteger,
+	Punctuation,
+	PunctuationParenthesisLeft = '(',
+	PunctuationParenthesisRight = ')',
+	PunctuationBraceLeft = '{',
+	PunctuationBraceRight = '}',
+	PunctuationBracketRight = '[',
+	PunctuationBracketLeft = ']',
+	PunctuationPeriod = '.',
+	PunctuationComma = ',',
+	PunctuationAt = '@',
+	PunctuationUnderscore = '_',
+	PunctuationEqual = '=',
+	PunctuationPlus = '+',
+	PunctuationMinus = '-',
+	PunctuationAsterisk = '*',
+	PunctuationForwardSlash = '/',
+	PunctuationBackSlash = '\\',
+	PunctuationColon = ':',
+	PunctuationSemicolon = ';',
+	PunctuationLessThan = '<',
+	PunctuationGreaterThan = '>',
+	PunctuationExclamation = '!',
+	PunctuationQuestion = '?',
+	PunctuationAmpersand = '&',
+	PunctuationPipe = '|',
 }
 
 struct Token
@@ -38,7 +58,7 @@ struct Token
 	string toString()
 	{
 		auto value = value.replace("\n", "\\n");
-		return i"$(line):$(column): $(type)\t$(value)".text;
+		return i"$(line+1):$(column+1): $(type)\t$(value)".text;
 	}
 }
 
@@ -215,7 +235,6 @@ class Lexer
 			{
 				token.type = TokenType.LiteralString;
 				token.value.popFrontExactly(1LU);
-				popFront;
 				break;
 			}
 			else
@@ -250,6 +269,66 @@ class Lexer
 		return token;
 	}
 
+	Token chopTokenLiteralInteger()
+	{
+		Token token;
+		token.type = TokenType.Unknown;
+		token.line = line;
+		token.column = column;
+		token.value ~= front;
+		popFront;
+
+		token.value ~= chopWhile!isNumber;
+		if (!empty)
+		{
+			token.type = TokenType.LiteralInteger;
+		}
+
+		return token;
+	}
+
+	Token chopTokenPunctuation()
+	{
+		Token token;
+		token.type = TokenType.Unknown;
+		token.line = line;
+		token.column = column;
+
+		// TODO: generate using comptime string mixins (https://dlang.org/articles/mixin.html)
+		switch (front)
+		{
+			case TokenType.PunctuationParenthesisLeft:
+			case TokenType.PunctuationParenthesisRight:
+			case TokenType.PunctuationBraceLeft:
+			case TokenType.PunctuationBraceRight:
+			case TokenType.PunctuationBracketRight:
+			case TokenType.PunctuationBracketLeft:
+			case TokenType.PunctuationPeriod:
+			case TokenType.PunctuationComma:
+			case TokenType.PunctuationAt:
+			case TokenType.PunctuationUnderscore:
+			case TokenType.PunctuationEqual:
+			case TokenType.PunctuationForwardSlash:
+			case TokenType.PunctuationBackSlash:
+			case TokenType.PunctuationColon:
+			case TokenType.PunctuationSemicolon:
+			case TokenType.PunctuationPlus:
+			case TokenType.PunctuationMinus:
+			case TokenType.PunctuationAsterisk:
+			case TokenType.PunctuationLessThan:
+			case TokenType.PunctuationGreaterThan:
+			case TokenType.PunctuationExclamation:
+			case TokenType.PunctuationQuestion:
+			case TokenType.PunctuationAmpersand:
+			case TokenType.PunctuationPipe:
+				token.type = cast(TokenType)front;
+				break;
+			default: assert(0, i"TODO: punctuation: `$(front)` unimplemented".text);
+		}
+		token.value ~= front;
+
+		return token;
+	}
 
 	// TODO: partial/incomplete tokens
 	static Token[] tokenize(string src)
@@ -258,6 +337,7 @@ class Lexer
 
 		foreach (_; l)
 		{
+			// whitespace
 			l.chopWhile!isWhite;
 
 			// single-line comment
@@ -281,10 +361,28 @@ class Lexer
 				l.tokens ~= token;
 			}
 
-			// literal float/decimal/double
-			else if (l[0] && l[0].get.isNumber && l[1] == '.')
+			// literal number
+			else if (l[0] && l[0].get.isNumber)
 			{
-				auto token = l.chopToken!(TokenType.LiteralFloat);
+				// literal float/decimal/double
+				// FIXME: lol, totally not right
+				if (l[1] == '.')
+				{
+					auto token = l.chopToken!(TokenType.LiteralFloat);
+					l.tokens ~= token;
+				}
+				// literal int/long
+				else
+				{
+					auto token = l.chopToken!(TokenType.LiteralInteger);
+					l.tokens ~= token;
+				}
+			}
+
+			// punctuation
+			else if (l[0] && l[0].get.isPunctuation)
+			{
+				auto token = l.chopToken!(TokenType.Punctuation); // NOTE: specific punctuation character is determined by chopToken
 				l.tokens ~= token;
 			}
 		}
@@ -293,10 +391,16 @@ class Lexer
 	}
 }
 
-void main()
+void main(string[] args)
 {
-	auto filePath = "./source/Main.cls";
-	auto src = filePath.readText;
-	auto tokens = Lexer.tokenize(src);
-	tokens.each!writeln;
+	import std.parallelism;
+	import std.datetime.stopwatch;
+	args.popFront;
+	foreach (filePath; args.parallel)
+	{
+		auto src = filePath.readText;
+		auto tokens = Lexer.tokenize(src);
+		tokens.each!(token => writeln(i"$(filePath):$(token)"));
+	}
+
 }
