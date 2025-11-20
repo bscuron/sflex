@@ -46,6 +46,7 @@ enum TokenType
 	PunctuationQuestion = '?',
 	PunctuationAmpersand = '&',
 	PunctuationPipe = '|',
+	PunctuationCaret = '^',
 }
 
 struct Token
@@ -321,6 +322,7 @@ class Lexer
 			case TokenType.PunctuationQuestion:
 			case TokenType.PunctuationAmpersand:
 			case TokenType.PunctuationPipe:
+			case TokenType.PunctuationCaret:
 				token.type = cast(TokenType)front;
 				break;
 			default: assert(0, i"TODO: punctuation: `$(front)` unimplemented".text);
@@ -343,22 +345,19 @@ class Lexer
 			// single-line comment
 			if (l[0] == '/' && l[1] == '/')
 			{
-				auto token = l.chopToken!(TokenType.CommentLine);
-				l.tokens ~= token;
+				l.tokens ~= l.chopToken!(TokenType.CommentLine);
 			}
 
 			// multi-line comment
 			else if (l[0] == '/' && l[1] == '*')
 			{
-				auto token = l.chopToken!(TokenType.CommentBlock);
-				l.tokens ~= token;
+				l.tokens ~= l.chopToken!(TokenType.CommentBlock);
 			}
 
 			// literal string
 			else if (l[0] == '\'')
 			{
-				auto token = l.chopToken!(TokenType.LiteralString);
-				l.tokens ~= token;
+				l.tokens ~= l.chopToken!(TokenType.LiteralString);
 			}
 
 			// literal number
@@ -368,22 +367,19 @@ class Lexer
 				// FIXME: lol, totally not right
 				if (l[1] == '.')
 				{
-					auto token = l.chopToken!(TokenType.LiteralFloat);
-					l.tokens ~= token;
+					l.tokens ~= l.chopToken!(TokenType.LiteralFloat);
 				}
 				// literal int/long
 				else
 				{
-					auto token = l.chopToken!(TokenType.LiteralInteger);
-					l.tokens ~= token;
+					l.tokens ~= l.chopToken!(TokenType.LiteralInteger);
 				}
 			}
 
 			// punctuation
 			else if (l[0] && l[0].get.isPunctuation)
 			{
-				auto token = l.chopToken!(TokenType.Punctuation); // NOTE: specific punctuation character is determined by chopToken
-				l.tokens ~= token;
+				l.tokens ~= l.chopToken!(TokenType.Punctuation); // NOTE: specific punctuation character is determined by chopToken
 			}
 		}
 
@@ -394,7 +390,6 @@ class Lexer
 void main(string[] args)
 {
 	import std.parallelism;
-	import std.datetime.stopwatch;
 	args.popFront;
 	foreach (filePath; args.parallel)
 	{
