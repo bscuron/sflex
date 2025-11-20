@@ -19,8 +19,7 @@ enum TokenType
 	CommentLine,
 	CommentBlock,
 	LiteralString,
-	/* LiteralFloat, */
-	/* LiteralInteger, */
+	LiteralFloat,
 	/* ParenthesisLeft, */
 	/* ParenthesisRight, */
 	/* BraceLeft, */
@@ -32,13 +31,13 @@ enum TokenType
 struct Token
 {
 	TokenType type;
-	string value;
+	string value; // TODO: https://dlang.org/library/std/sumtype.html
 	ulong line;
 	ulong column;
 
 	string toString()
 	{
-		auto value = this.value.lineSplitter.join("\\n");
+		auto value = value.replace("\n", "\\n");
 		return i"$(line):$(column): $(type)\t$(value)".text;
 	}
 }
@@ -170,6 +169,12 @@ class Lexer
 		token.line = line;
 		token.column = column;
 
+		foreach (_; 0..2)
+		{
+			token.value ~= front;
+			popFront;
+		}
+
 		for (;;)
 		{
 			token.value ~= chopUntil!"a=='/'";
@@ -179,13 +184,11 @@ class Lexer
 			}
 			if (this[-1] == '*')
 			{
-				token.value.popFrontExactly(2LU);
-				token.value.popBack;
 				token.type = TokenType.CommentBlock;
-				popFront;
+				token.value.popFrontExactly(2LU);
+				token.value.popBackExactly(1LU);
 				break;
 			}
-			token.value ~= front;
 			popFront;
 		}
 
@@ -199,26 +202,54 @@ class Lexer
 		token.line = line;
 		token.column = column;
 
+		token.value ~= front;
+		popFront;
 		for (;;)
 		{
-			token.value ~= front;
-			popFront;
 			token.value ~= chopUntil!"a=='\\\''";
 			if (empty)
 			{
 				break;
 			}
-			if (this[-1] != '\\')
+			else if (this[-1] != '\\')
 			{
-				token.value.popFrontExactly(1LU);
 				token.type = TokenType.LiteralString;
+				token.value.popFrontExactly(1LU);
 				popFront;
 				break;
 			}
+			else
+			{
+				token.value ~= front;
+			}
+			popFront;
 		}
 
 		return token;
 	}
+
+	Token chopTokenLiteralFloat()
+	{
+		Token token;
+		token.type = TokenType.Unknown;
+		token.line = line;
+		token.column = column;
+
+		foreach (_; 0..2)
+		{
+			token.value ~= front;
+			popFront;
+		}
+
+		token.value ~= chopWhile!isNumber;
+		if (this[-1] && this[-1].get.isNumber)
+		{
+			token.type = TokenType.LiteralFloat;
+		}
+
+		return token;
+	}
+
 
 	// TODO: partial/incomplete tokens
 	static Token[] tokenize(string src)
@@ -247,6 +278,13 @@ class Lexer
 			else if (l[0] == '\'')
 			{
 				auto token = l.chopToken!(TokenType.LiteralString);
+				l.tokens ~= token;
+			}
+
+			// literal float/decimal/double
+			else if (l[0] && l[0].get.isNumber && l[1] == '.')
+			{
+				auto token = l.chopToken!(TokenType.LiteralFloat);
 				l.tokens ~= token;
 			}
 		}
