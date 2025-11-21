@@ -21,7 +21,6 @@ enum TokenType
 	LiteralString,
 	LiteralFloat,
 	LiteralInteger,
-	Punctuation,
 	PunctuationParenthesisLeft = '(',
 	PunctuationParenthesisRight = ')',
 	PunctuationBraceLeft = '{',
@@ -295,37 +294,13 @@ class Lexer
 		token.line = line;
 		token.column = column;
 
-		// TODO: generate using comptime string mixins (https://dlang.org/articles/mixin.html)
-		switch (front)
+		if (auto punctuationTokenType = cast(TokenType)front)
 		{
-			case TokenType.PunctuationParenthesisLeft:
-			case TokenType.PunctuationParenthesisRight:
-			case TokenType.PunctuationBraceLeft:
-			case TokenType.PunctuationBraceRight:
-			case TokenType.PunctuationBracketRight:
-			case TokenType.PunctuationBracketLeft:
-			case TokenType.PunctuationPeriod:
-			case TokenType.PunctuationComma:
-			case TokenType.PunctuationAt:
-			case TokenType.PunctuationUnderscore:
-			case TokenType.PunctuationEqual:
-			case TokenType.PunctuationForwardSlash:
-			case TokenType.PunctuationBackSlash:
-			case TokenType.PunctuationColon:
-			case TokenType.PunctuationSemicolon:
-			case TokenType.PunctuationPlus:
-			case TokenType.PunctuationMinus:
-			case TokenType.PunctuationAsterisk:
-			case TokenType.PunctuationLessThan:
-			case TokenType.PunctuationGreaterThan:
-			case TokenType.PunctuationExclamation:
-			case TokenType.PunctuationQuestion:
-			case TokenType.PunctuationAmpersand:
-			case TokenType.PunctuationPipe:
-			case TokenType.PunctuationCaret:
-				token.type = cast(TokenType)front;
-				break;
-			default: assert(0, i"TODO: punctuation: `$(front)` unimplemented".text);
+			token.type = punctuationTokenType;
+		}
+		else
+		{
+			assert(0, i"TODO: punctuation: `$(front)` unimplemented".text);
 		}
 		token.value ~= front;
 
@@ -364,7 +339,6 @@ class Lexer
 			else if (l[0] && l[0].get.isNumber)
 			{
 				// literal float/decimal/double
-				// FIXME: lol, totally not right
 				if (l[1] == '.')
 				{
 					l.tokens ~= l.chopToken!(TokenType.LiteralFloat);
@@ -379,7 +353,7 @@ class Lexer
 			// punctuation
 			else if (l[0] && l[0].get.isPunctuation)
 			{
-				l.tokens ~= l.chopToken!(TokenType.Punctuation); // NOTE: specific punctuation character is determined by chopToken
+				l.tokens ~= l.chopTokenPunctuation;
 			}
 		}
 
