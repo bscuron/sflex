@@ -259,6 +259,8 @@ Token chopTokenLiteralNumber(Lexer lexer)
 	return token;
 }
 
+// TODO: chopTokenPunctuation without switch? cast(TokenType)c could
+// include punctuation that is not valid apex
 Token chopTokenPunctuation(Lexer lexer)
 {
 	auto token = Token();
