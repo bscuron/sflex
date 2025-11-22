@@ -1,375 +1,132 @@
+import lexer;
 import std.stdio;
-import std.file; // nocheckin
-import std.array;
-import std.typecons;
-import std.uni;
-import std.conv;
-import std.range;
-import std.range.primitives;
-import std.algorithm;
-import std.functional;
-import std.traits;
+import std.parallelism;
 import std.string;
-import std.math;
-import std.path;
-
-enum TokenType
-{
-	Unknown,
-	CommentLine,
-	CommentBlock,
-	LiteralString,
-	LiteralFloat,
-	LiteralInteger,
-	PunctuationParenthesisLeft = '(',
-	PunctuationParenthesisRight = ')',
-	PunctuationBraceLeft = '{',
-	PunctuationBraceRight = '}',
-	PunctuationBracketRight = '[',
-	PunctuationBracketLeft = ']',
-	PunctuationPeriod = '.',
-	PunctuationComma = ',',
-	PunctuationAt = '@',
-	PunctuationUnderscore = '_',
-	PunctuationEqual = '=',
-	PunctuationPlus = '+',
-	PunctuationMinus = '-',
-	PunctuationAsterisk = '*',
-	PunctuationForwardSlash = '/',
-	PunctuationBackSlash = '\\',
-	PunctuationColon = ':',
-	PunctuationSemicolon = ';',
-	PunctuationLessThan = '<',
-	PunctuationGreaterThan = '>',
-	PunctuationExclamation = '!',
-	PunctuationQuestion = '?',
-	PunctuationAmpersand = '&',
-	PunctuationPipe = '|',
-	PunctuationCaret = '^',
-}
-
-struct Token
-{
-	TokenType type;
-	string value; // TODO: https://dlang.org/library/std/sumtype.html
-	ulong line;
-	ulong column;
-
-	string toString()
-	{
-		auto value = value.replace("\n", "\\n");
-		return i"$(line+1):$(column+1): $(type)\t$(value)".text;
-	}
-}
-
-class Lexer
-{
-	Appender!(Token[]) tokens;                 // lexical tokens
-	string src;                                // source string
-	string value;                              // value of token being currently parsed
-	ulong line;                                // line offset
-	@property ulong column() => offset - bol;  // column offset
-	ulong bol;                                 // beginning of line offset
-	ulong offset;                              // byte offset
-
-	this(string src)
-	{
-		this.src = src;
-	}
-
-	static assert(isInputRange!Lexer);
-	dchar front() => src[offset];
-	void popFront()
-	{
-		if (!empty && front == '\n')
-		{
-			line++;
-			bol = offset + 1;
-		}
-		offset++;
-	}
-	bool empty() => src.empty || offset > src.length - 1;
-	dchar moveFront() => front;
-	int opApply(scope int delegate(dchar) dg)
-	{
-		while (!empty)
-		{
-			auto ret = dg(front);
-			if (ret)
-			{
-				return ret;
-			}
-			popFront;
-		}
-		return 0;
-	}
-	int opApply(scope int delegate(ulong, dchar) dg)
-	{
-		while (!empty)
-		{
-			auto ret = dg(offset, front);
-			if (ret)
-			{
-				return ret;
-			}
-			popFront;
-		}
-		return 0;
-	}
-
-	// NOTE: since index op is used for offset relative to the lexer's byte
-	// offset, it is probably ok that i is signed. This allows negative
-	// offsets.
-	Nullable!dchar opIndex(long i)
-	{
-		// underflow
-		if (i < 0 && abs(i) > offset)
-		{
-			return Nullable!dchar.init;
-		}
-
-		i += offset;
-
-		// overflow
-		if (i > src.length - 1)
-		{
-			return Nullable!dchar.init;
-		}
-
-		return Nullable!dchar(src[i]);
-	}
-
-	@property Lexer save() => this;
-
-	string chopWhile(alias pred)()
-	{
-		Appender!string value;
-
-		while (!empty && pred(front)) 
-		{
-			value ~= front;
-			popFront;
-		}
-
-		return value[];
-	}
-
-	string chopUntil(alias pred)() => chopWhile!(not!pred);
-
-	string chopLine() => chopUntil!"a=='\\n'";
-
-	Token chopToken(TokenType T)()
-	{
-		// TODO: break from comptime foreach?
-		static foreach (t; __traits(allMembers, TokenType))
-		{
-			static if (T == mixin("TokenType." ~ t))
-			{
-				return mixin("chopToken" ~ t);
-			}
-		}
-	}
-
-	Token chopTokenCommentLine()
-	{
-		Token token;
-		token.type = TokenType.Unknown;
-		token.line = line;
-		token.column = column;
-		token.value = chopLine;
-		token.value.popFrontExactly(2LU);
-		token.type = TokenType.CommentLine;
-		return token;
-	}
-
-	Token chopTokenCommentBlock()
-	{
-		Token token;
-		token.type = TokenType.Unknown;
-		token.line = line;
-		token.column = column;
-
-		foreach (_; 0..2)
-		{
-			token.value ~= front;
-			popFront;
-		}
-
-		for (;;)
-		{
-			token.value ~= chopUntil!"a=='/'";
-			if (empty)
-			{
-				break;
-			}
-			if (this[-1] == '*')
-			{
-				token.type = TokenType.CommentBlock;
-				token.value.popFrontExactly(2LU);
-				token.value.popBackExactly(1LU);
-				break;
-			}
-			popFront;
-		}
-
-		return token;
-	}
-
-	Token chopTokenLiteralString()
-	{
-		Token token;
-		token.type = TokenType.Unknown;
-		token.line = line;
-		token.column = column;
-
-		token.value ~= front;
-		popFront;
-		for (;;)
-		{
-			token.value ~= chopUntil!"a=='\\\''";
-			if (empty)
-			{
-				break;
-			}
-			else if (this[-1] != '\\')
-			{
-				token.type = TokenType.LiteralString;
-				token.value.popFrontExactly(1LU);
-				break;
-			}
-			else
-			{
-				token.value ~= front;
-			}
-			popFront;
-		}
-
-		return token;
-	}
-
-	Token chopTokenLiteralFloat()
-	{
-		Token token;
-		token.type = TokenType.Unknown;
-		token.line = line;
-		token.column = column;
-
-		foreach (_; 0..2)
-		{
-			token.value ~= front;
-			popFront;
-		}
-
-		token.value ~= chopWhile!isNumber;
-		if (this[-1] && this[-1].get.isNumber)
-		{
-			token.type = TokenType.LiteralFloat;
-		}
-
-		return token;
-	}
-
-	Token chopTokenLiteralInteger()
-	{
-		Token token;
-		token.type = TokenType.Unknown;
-		token.line = line;
-		token.column = column;
-		token.value ~= front;
-		popFront;
-
-		token.value ~= chopWhile!isNumber;
-		if (!empty)
-		{
-			token.type = TokenType.LiteralInteger;
-		}
-
-		return token;
-	}
-
-	Token chopTokenPunctuation()
-	{
-		Token token;
-		token.type = TokenType.Unknown;
-		token.line = line;
-		token.column = column;
-
-		if (auto punctuationTokenType = cast(TokenType)front)
-		{
-			token.type = punctuationTokenType;
-		}
-		else
-		{
-			assert(0, i"TODO: punctuation: `$(front)` unimplemented".text);
-		}
-		token.value ~= front;
-
-		return token;
-	}
-
-	// TODO: partial/incomplete tokens
-	static Token[] tokenize(string src)
-	{
-		auto l = new Lexer(src);
-
-		foreach (_; l)
-		{
-			// whitespace
-			l.chopWhile!isWhite;
-
-			// single-line comment
-			if (l[0] == '/' && l[1] == '/')
-			{
-				l.tokens ~= l.chopToken!(TokenType.CommentLine);
-			}
-
-			// multi-line comment
-			else if (l[0] == '/' && l[1] == '*')
-			{
-				l.tokens ~= l.chopToken!(TokenType.CommentBlock);
-			}
-
-			// literal string
-			else if (l[0] == '\'')
-			{
-				l.tokens ~= l.chopToken!(TokenType.LiteralString);
-			}
-
-			// literal number
-			else if (l[0] && l[0].get.isNumber)
-			{
-				// literal float/decimal/double
-				if (l[1] == '.')
-				{
-					l.tokens ~= l.chopToken!(TokenType.LiteralFloat);
-				}
-				// literal int/long
-				else
-				{
-					l.tokens ~= l.chopToken!(TokenType.LiteralInteger);
-				}
-			}
-
-			// punctuation
-			else if (l[0] && l[0].get.isPunctuation)
-			{
-				l.tokens ~= l.chopTokenPunctuation;
-			}
-		}
-
-		return l.tokens[];
-	}
-}
+import std.range;
+import std.mmfile;
+import std.file;
+import std.datetime.stopwatch;
+import std.algorithm;
 
 void main(string[] args)
 {
-	import std.parallelism;
-	args.popFront;
-	foreach (filePath; args.parallel)
+	foreach (filePath; args.dropOne.parallel)
 	{
-		auto src = filePath.readText;
-		auto tokens = Lexer.tokenize(src);
-		tokens.each!(token => writeln(i"$(filePath):$(token)"));
+		auto tokens = filePath.tokenize!MmFile;
+		foreach (token; tokens)
+		{
+			writeln(i"$(filePath):$(token.line+1):$(token.column+1)|$(token.type)|$(token.value[])");
+		}
 	}
+}
 
+unittest
+{
+	auto src = "";
+	auto tokens = tokenize!string(src);
+	assert(tokens.empty);
+}
+
+unittest
+{
+	auto src = "// single-line comment";
+	auto tokens = tokenize!string(src);
+	assert(tokens.length == 1);
+	auto token = tokens.front;
+	assert(token.type == TokenType.CommentLine);
+	assert(token.value == src);
+	assert(token.line == 0LU);
+	assert(token.column == 0LU);
+}
+
+unittest
+{
+	auto src = "/* single-line block comment */";
+	auto tokens = tokenize!string(src);
+	assert(tokens.length == 1);
+	auto token = tokens.front;
+	assert(token.type == TokenType.CommentBlock);
+	assert(token.value == src);
+	assert(token.line == 0LU);
+	assert(token.column == 0LU);
+}
+
+unittest
+{
+	auto src = "/*\n";
+	     src ~=" * multi-line block comment\n";
+	     src ~=" */";
+	auto tokens = tokenize!string(src);
+	assert(tokens.length == 1);
+	auto token = tokens.front;
+	assert(token.type == TokenType.CommentBlock);
+	assert(token.value == src);
+	assert(token.line == 0LU);
+	assert(token.column == 0LU);
+}
+
+unittest
+{
+	auto src = "69420";
+	auto tokens = tokenize!string(src);
+	assert(tokens.length == 1);
+	auto token = tokens.front;
+	assert(token.type == TokenType.LiteralInteger);
+	assert(token.value == src);
+	assert(token.line == 0LU);
+	assert(token.column == 0LU);
+}
+
+unittest
+{
+	auto src = "1.234";
+	auto tokens = tokenize!string(src);
+	assert(tokens.length == 1);
+	auto token = tokens.front;
+	assert(token.type == TokenType.LiteralFloat);
+	assert(token.value == src);
+	assert(token.line == 0LU);
+	assert(token.column == 0LU);
+}
+
+unittest
+{
+	auto src = ".234";
+	auto tokens = tokenize!string(src);
+	assert(tokens.length == 2);
+	auto first = tokens.front;
+	tokens.popFront;
+	assert(first.type == TokenType.PunctuationDot);
+	assert(first.line == 0LU);
+	assert(first.column == 0LU);
+	auto second = tokens.front;
+	tokens.popFront;
+	assert(second.type == TokenType.LiteralInteger);
+	assert(second.value == src.dropOne);
+	assert(second.line == 0LU);
+	assert(second.column == 1LU);
+}
+
+unittest
+{
+	auto src = "123.321.123";
+	auto tokens = tokenize!string(src);
+	assert(tokens.length == 3);
+	auto first = tokens.front;
+	tokens.popFront;
+	assert(first.type == TokenType.LiteralFloat);
+	assert(first.value == "123.321");
+	assert(first.line == 0LU);
+	assert(first.column == 0LU);
+	auto second = tokens.front;
+	tokens.popFront;
+	assert(second.type == TokenType.PunctuationDot);
+	assert(second.line == 0LU);
+	assert(second.column == first.value.length);
+	auto third = tokens.front;
+	tokens.popFront;
+	assert(third.type == TokenType.LiteralInteger);
+	assert(third.value == "123");
+	assert(third.line == 0LU);
+	assert(third.column == first.value.length + 1);
 }
