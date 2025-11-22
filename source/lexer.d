@@ -448,7 +448,7 @@ Token chopTokenIdentifier(Lexer lexer)
 	else
 	{
 		lexer.chopWhile!(c => c.isAlphaNum || c == '_')(appender);
-		if (token.value.memoize!toLower in Keywords)
+		if (token.value.toLower in Keywords)
 		{
 			token.type = TokenType.Keyword;
 		}
