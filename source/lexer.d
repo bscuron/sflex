@@ -17,6 +17,12 @@ enum TokenType
 {
 	Unknown,
 
+	// Keyword
+	Keyword,
+
+	// Identifier
+	Identifier,
+
 	// Comments
 	CommentLine,
 	CommentBlock,
@@ -427,6 +433,35 @@ Token chopTokenPunctuation(Lexer lexer)
 	return token;
 }
 
+Token chopTokenIdentifier(Lexer lexer)
+{
+	auto token = Token();
+	token.line = lexer.line;
+	token.column = lexer.column;
+	auto appender = appender(&token.value);
+	appender ~= lexer.front;
+	lexer.popFront;
+
+	if (lexer[-1] == '$' && (lexer[0].isNull || !lexer[0].get.isAlpha))
+	{
+	}
+	else
+	{
+		lexer.chopWhile!(c => c.isAlphaNum || c == '_')(appender);
+		if (token.value.memoize!toLower in Keywords)
+		{
+			token.type = TokenType.Keyword;
+		}
+		else
+		{
+			token.type = TokenType.Identifier;
+		}
+	}
+	token.value = appender[];
+
+	return token;
+}
+
 Token[] tokenize(T)(string s)
 	if (is(T == MmFile) || is(T == File) || is(T == string))
 {
@@ -475,6 +510,12 @@ Token[] tokenize(T)(string s)
 			{
 				continue;
 			}
+		}
+
+		// identifier/keyword
+		else if (lexer[0].get.isAlpha || lexer[0].get == '$')
+		{
+			tokens ~= lexer.chopTokenIdentifier;
 		}
 
 		// punctuation
