@@ -24,7 +24,7 @@ void main(string[] args)
 			}
 		}
 	}
-	write(output);
+	write(output[]);
 }
 
 unittest
