@@ -42,7 +42,7 @@ enum TokenType
 	PunctuationStar = '*',
 	PunctuationSlash = '/',
 	PunctuationPercent = '%',
-	PunctuationAmp = '&',
+	PunctuationAmpersand = '&',
 	PunctuationPipe = '|',
 	PunctuationCaret = '^',
 	PunctuationTilde = '~',
@@ -284,7 +284,7 @@ Token chopTokenPunctuation(Lexer lexer)
 		case TokenType.PunctuationStar:
 		case TokenType.PunctuationSlash:
 		case TokenType.PunctuationPercent:
-		case TokenType.PunctuationAmp:
+		case TokenType.PunctuationAmpersand:
 		case TokenType.PunctuationPipe:
 		case TokenType.PunctuationCaret:
 		case TokenType.PunctuationTilde:
