@@ -7,17 +7,24 @@ import std.mmfile;
 import std.file;
 import std.datetime.stopwatch;
 import std.algorithm;
+import std.conv;
 
 void main(string[] args)
 {
+	Appender!string output;
+	output.reserve(1024LU * 1000LU);
 	foreach (filePath; args.dropOne.parallel)
 	{
 		auto tokens = filePath.tokenize!MmFile;
 		foreach (token; tokens)
 		{
-			writeln(i"$(filePath):$(token.line+1):$(token.column+1)|$(token.type)|$(token.value[])");
+			synchronized
+			{
+				output ~= i"$(filePath):$(token.line+1):$(token.column+1)|$(token.type)|$(token.value[])\n".text;
+			}
 		}
 	}
+	write(output);
 }
 
 unittest
