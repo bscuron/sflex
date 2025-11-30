@@ -144,3 +144,12 @@ unittest
 	auto first = tokens.front;
 	assert(first.type == TokenType.Keyword);
 }
+
+unittest
+{
+	auto src = "// 😊";
+	auto tokens = tokenize!string(src);
+	assert(tokens.length == 1);
+	auto token = tokens.front;
+	assert(token.value == "// 😊");
+}
