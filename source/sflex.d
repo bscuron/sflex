@@ -197,7 +197,7 @@ final struct Token
 
 final class Lexer
 {
-	typeof(byUTF!char("")) data;
+	string data;
 	ulong line;                               // line offset
 	@property ulong column() => offset - bol; // column offset
 	ulong bol;                                // beginning of line offset
@@ -205,14 +205,14 @@ final class Lexer
 
 	this(string data)
 	{
-		this.data = data.byUTF!char;
+		this.data = data;
 	}
 
 	char front() => data[offset];
 
 	void popFront()
 	{
-		if (!empty && front == '\n')
+		if (front == '\n')
 		{
 			line++;
 			bol = offset + 1;
@@ -279,23 +279,24 @@ void chopLine(Lexer lexer, RefAppender!string appender)
 	lexer.chopUntil!"a=='\\n'"(appender);
 }
 
-Token chopTokenCommentLine(Lexer lexer)
+Token chopTokenCommentLine(Lexer lexer, RefAppender!string appender)
 {
+	auto start = appender.length;
 	auto token = Token();
 	token.line = lexer.line;
 	token.column = lexer.column;
-	auto appender = appender(&token.value);
 	lexer.chopLine(appender);
+	token.value = appender[][start..$];
 	token.type = TokenType.CommentLine;
 	return token;
 }
 
-Token chopTokenCommentBlock(Lexer lexer)
+Token chopTokenCommentBlock(Lexer lexer, RefAppender!string appender)
 {
+	auto start = appender.length;
 	auto token = Token();
 	token.line = lexer.line;
 	token.column = lexer.column;
-	auto appender = appender(&token.value);
 
 	for (;;)
 	{
@@ -316,17 +317,17 @@ Token chopTokenCommentBlock(Lexer lexer)
 			lexer.popFront;
 		}
 	}
-	token.value = appender[];
+	token.value = appender[][start..$];
 
 	return token;
 }
 
-Token chopTokenLiteralString(Lexer lexer)
+Token chopTokenLiteralString(Lexer lexer, RefAppender!string appender)
 {
+	auto start = appender.length;
 	auto token = Token();
 	token.line = lexer.line;
 	token.column = lexer.column;
-	auto appender = appender(&token.value);
 	appender ~= lexer.takeExactly(1LU);
 
 	for (;;)
@@ -334,13 +335,12 @@ Token chopTokenLiteralString(Lexer lexer)
 		lexer.chopUntil!"a=='\\\''"(appender);
 		if (lexer.empty)
 		{
-			token.value = appender[];
 			break;
 		}
 		else if (lexer[-1] != '\\')
 		{
 			token.type = TokenType.LiteralString;
-			token.value = appender[][1..$];
+			start++;
 			lexer.popFrontExactly(1LU);
 			break;
 		}
@@ -350,16 +350,17 @@ Token chopTokenLiteralString(Lexer lexer)
 			lexer.popFront;
 		}
 	}
+	token.value = appender[][start..$];
 
 	return token;
 }
 
-Token chopTokenLiteralNumber(Lexer lexer)
+Token chopTokenLiteralNumber(Lexer lexer, RefAppender!string appender)
 {
+	auto start = appender.length;
 	auto token = Token();
 	token.line = lexer.line;
 	token.column = lexer.column;
-	auto appender = appender(&token.value);
 	lexer.chopWhile!isNumber(appender);
 	token.type = TokenType.LiteralInteger;
 
@@ -369,6 +370,7 @@ Token chopTokenLiteralNumber(Lexer lexer)
 		lexer.chopWhile!isNumber(appender);
 		token.type = TokenType.LiteralFloat;
 	}
+	token.value = appender[][start..$];
 
 	return token;
 }
@@ -384,19 +386,19 @@ Token chopTokenPunctuation(Lexer lexer)
 	return token;
 }
 
-Token chopTokenIdentifier(Lexer lexer)
+Token chopTokenIdentifier(Lexer lexer, RefAppender!string appender)
 {
+	auto start = appender.length;
 	auto token = Token();
 	token.line = lexer.line;
 	token.column = lexer.column;
-	auto appender = appender(&token.value);
 	appender ~= lexer.front;
 	lexer.popFront;
 
 	if (lexer[-1] != '$' || (lexer.offset < lexer.length - 1 && lexer[0].isAlpha))
 	{
 		lexer.chopWhile!(c => c.isAlphaNum || c == '_')(appender);
-		if (token.value.toLower in Keywords)
+		if (appender[][start..$].memoize!toLower in Keywords)
 		{
 			token.type = TokenType.Keyword;
 		}
@@ -405,7 +407,7 @@ Token chopTokenIdentifier(Lexer lexer)
 			token.type = TokenType.Identifier;
 		}
 	}
-	token.value = appender[];
+	token.value = appender[][start..$];
 
 	return token;
 }
@@ -427,39 +429,41 @@ Token[] tokenize(T)(string s)
 	{
 		data = s;
 	}
-	auto lexer = scoped!Lexer(data);
-	auto tokens = Appender!(Token[]).init;
 
+	auto lexer = scoped!Lexer(data);
+	auto buffer = string.init;
+	auto appender = appender(&buffer);
+	auto tokens = Appender!(Token[]).init;
 	while (!lexer.empty)
 	{
 		// single-line comment
 		if (lexer[0] == '/' && lexer[1] == '/')
 		{
-			tokens ~= lexer.chopTokenCommentLine;
+			tokens ~= lexer.chopTokenCommentLine(appender);
 		}
 
 		// multi-line comment
 		else if (lexer[0] == '/' && lexer[1] == '*')
 		{
-			tokens ~= lexer.chopTokenCommentBlock;
+			tokens ~= lexer.chopTokenCommentBlock(appender);
 		}
 
 		// literal string
 		else if (lexer[0] == '\'')
 		{
-			tokens ~= lexer.chopTokenLiteralString;
+			tokens ~= lexer.chopTokenLiteralString(appender);
 		}
 
 		// literal number
 		else if (lexer[0].isNumber)
 		{
-			tokens ~= lexer.chopTokenLiteralNumber;
+			tokens ~= lexer.chopTokenLiteralNumber(appender);
 		}
 
 		// identifier/keyword
 		else if (lexer[0].isAlpha || lexer[0] == '$')
 		{
-			tokens ~= lexer.chopTokenIdentifier;
+			tokens ~= lexer.chopTokenIdentifier(appender);
 		}
 
 		// punctuation

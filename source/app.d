@@ -8,58 +8,46 @@ import std.algorithm;
 import std.conv;
 import std.container;
 import std.functional;
+import std.concurrency;
+import std.typecons;
+import core.stdc.stdio;
+import core.memory;
 
 void main(string[] args)
 {
-
-	Appender!string paths;
+	Appender!(typeof(task!(tokenize!MmFile)(string.init))[]) tasks;
 	foreach (arg; args.dropOne)
 	{
 		if (arg.isFile)
 		{
-			synchronized
-			{
-				paths ~= arg;
-				paths ~= '\0';
-			}
+			auto task = task!(tokenize!MmFile)(arg);
+			tasks ~= task;
+			taskPool.put(task);
 		}
-		else
+		else foreach (dirEntry; dirEntries(arg, "*.{cls,trigger,apex}", SpanMode.depth).parallel)
 		{
-			foreach (dirEntry; dirEntries(arg, "*.{cls,trigger,apex}", SpanMode.depth).parallel)
-			{
-				if (dirEntry.isFile)
-				{
-					synchronized
-					{
-						paths ~= dirEntry.name;
-						paths ~= '\0';
-					}
-				}
-			}
+			auto task = task!(tokenize!MmFile)(dirEntry.name);
+			tasks ~= task;
+			taskPool.put(task);
 		}
 	}
 
-	Appender!string buffer;
-	foreach (path; paths[].splitter('\0').dropBackOne.parallel)
+	Appender!(char[]) buffer;
+	foreach (task; tasks)
 	{
-		auto tokens = tokenize!MmFile(path);
-		synchronized
+		auto tokens = task.yieldForce();
+		foreach (token; tokens)
 		{
-			foreach (token; tokens)
-			{
-				buffer ~= path;
-				buffer ~= ':';
-				buffer ~= (token.line + 1).to!string;
-				buffer ~= ':';
-				buffer ~= (token.column + 1).to!string;
-				buffer ~= '|';
-				buffer ~= token.type.to!string;
-				buffer ~= '|';
-				buffer ~= token.value;
-				buffer ~= '\n';
-			}
+			buffer ~= token.line.to!string;
+			buffer ~= ":";
+			buffer ~= token.column.to!string;
+			buffer ~= "|";
+			buffer ~= token.type.memoize!(to!string);
+			buffer ~= "|";
+			buffer ~= token.value;
+			buffer ~= "\n";
 		}
+		buffer[].write;
+		buffer.clear;
 	}
-
-	buffer[].write;
 }
